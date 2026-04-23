@@ -1,0 +1,1051 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8" />
+    <title>FreeTT Pro - Advanced Offline VTT</title>
+    <style>
+        :root { --bg: #1a1a1a; --side: #2d2d2d; --acc: #3498db; --txt: #eee; --brd: #444; }
+        body, html {
+            margin: 0; padding: 0; height: 100%; background: var(--bg); color: var(--txt);
+            font-family: sans-serif; overflow: hidden;
+        }
+        #vtt-container { display: flex; height: 100vh; position: relative; }
+
+        /* Sidebar */
+        #sidebar {
+            width: 340px; background: var(--side); border-right: 1px solid var(--brd);
+            display: flex; flex-direction: column; z-index: 10;
+        }
+        .tabs {
+            display: flex; background: #111; flex-wrap: wrap;
+        }
+        .tab-btn {
+            flex: 1; padding: 10px; border: none; background: none;
+            color: #888; cursor: pointer; font-size: 9px; font-weight: bold;
+            text-transform: uppercase; border-bottom: 2px solid transparent;
+            user-select: none;
+        }
+        .tab-btn.active {
+            background: var(--side); color: var(--acc); border-bottom: 2px solid var(--acc);
+        }
+        .tab-content {
+            display: none; padding: 15px; overflow-y: auto; flex-grow: 1;
+        }
+        .tab-content.active { display: block; }
+
+        /* UI Elements */
+        .ui-box {
+            background: #222; padding: 12px; border-radius: 5px; margin-bottom: 12px;
+            border: 1px solid var(--brd);
+        }
+        .tool-btn {
+            width: 100%; padding: 10px; background: #333; border: 1px solid #444;
+            color: white; cursor: pointer; border-radius: 4px; margin-bottom: 8px;
+            font-size: 13px; text-align: center; user-select: none;
+        }
+        .tool-btn:hover { background: #444; }
+        .tool-btn.active { background: var(--acc); border-color: white; }
+
+        .category-grid {
+            display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; margin-bottom: 10px;
+        }
+        .cat-btn {
+            padding: 5px; font-size: 9px; background: #444; border: none;
+            color: white; cursor: pointer; border-radius: 3px; user-select: none;
+        }
+        .cat-btn.active { background: var(--acc); }
+
+        #preview-zone {
+            display: grid; grid-template-columns: repeat(3, 1fr);
+            gap: 8px; max-height: 200px; overflow-y: auto;
+            padding: 5px; background: #111; border-radius: 4px;
+        }
+        #preview-zone img {
+            width: 100%; cursor: pointer; border: 1px solid #333; border-radius: 3px;
+            user-select: none;
+        }
+
+        /* Viewport & Canvas */
+        #viewport {
+            flex-grow: 1; position: relative; background: #000; overflow: hidden;
+        }
+        canvas { display: block; width: 100%; height: 100%; cursor: crosshair; }
+
+        /* Floating Overlays */
+        #ruler-hint {
+            position: absolute; background: rgba(0,0,0,0.8); color: white;
+            padding: 5px; border-radius: 4px; display: none; pointer-events: none;
+            z-index: 1000; font-size: 12px; white-space: nowrap;
+            user-select: none;
+        }
+        #item-context {
+            position: absolute; display: none; background: #333;
+            border: 1px solid var(--acc); padding: 10px; border-radius: 8px;
+            z-index: 100; width: 220px; box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+            user-select: none;
+        }
+        #item-context label {
+            font-size: 11px; color: #aaa; margin-top: 8px; display: block;
+        }
+        #item-context input[type="number"] {
+            width: 100%; padding: 6px; margin-top: 4px; background: #111;
+            border: 1px solid #444; border-radius: 3px; color: white;
+        }
+        /* Layers */
+        .layer-control {
+            display: flex; align-items: center; margin-bottom: 6px;
+            gap: 6px; cursor: pointer; border-radius: 4px;
+            padding: 6px;
+            transition: background-color 0.3s;
+        }
+        .layer-control.active, .layer-control:hover {
+            background: var(--acc);
+            color: black;
+        }
+        .layer-control input[type="text"] {
+            flex: 1 1 auto; border-radius: 3px;
+            padding: 3px 5px;
+        }
+        .layer-control input[type="number"] {
+            width: 60px; border-radius: 3px; padding: 3px 5px;
+        }
+        .layer-buttons {
+            display: flex; gap: 4px;
+        }
+        .layer-buttons button {
+            background: #444; color: white; border: none; border-radius: 3px;
+            width: 25px; height: 25px; font-weight: bold; cursor: pointer;
+            user-select: none;
+        }
+        .layer-buttons button:hover { background: var(--acc); }
+
+        /* Disabled dragging cursor on assets */
+        .no-move {
+            cursor: default !important;
+        }
+    </style>
+</head>
+<body>
+
+<div id="vtt-container">
+    <div id="ruler-hint">0 ft</div>
+
+    <nav id="sidebar">
+        <div class="tabs">
+            <button class="tab-btn active" id="btn-tab-editor" onclick="showTab('editor')">Editor</button>
+            <button class="tab-btn" id="btn-tab-tools" onclick="showTab('tools')">Tools</button>
+            <button class="tab-btn" id="btn-tab-options" onclick="showTab('options')">Options</button>
+            <button class="tab-btn" id="btn-tab-upload" onclick="showTab('upload')">Upload</button>
+            <button class="tab-btn" id="btn-tab-settings" onclick="showTab('settings')">Settings</button>
+        </div>
+
+        <div id="editor" class="tab-content active">
+            <div class="ui-box">
+                <strong>Layers</strong>
+                <div id="layers-container"></div>
+                <button class="tool-btn" onclick="addLayerPrompt()">Add Layer</button>
+                <button class="tool-btn" onclick="removeSelectedLayer()" style="background:#c0392b;">Remove Selected Layer</button>
+            </div>
+            <div class="ui-box">
+                <strong>Library</strong>
+                <div class="category-grid" id="category-buttons">
+                    <button class="cat-btn active" id="cat-player" onclick="setCategory('player')">Players</button>
+                    <button class="cat-btn" id="cat-wall" onclick="setCategory('wall')">Walls</button>
+                    <button class="cat-btn" id="cat-furniture" onclick="setCategory('furniture')">Furniture</button>
+                    <button class="cat-btn" id="cat-plant" onclick="setCategory('plant')">Plants</button>
+                    <button class="cat-btn" id="cat-roof" onclick="setCategory('roof')">Roof</button>
+                    <button class="cat-btn" id="cat-item" onclick="setCategory('item')">Items</button>
+                    <button class="cat-btn" id="cat-other" onclick="setCategory('other')">Other</button>
+                </div>
+                <div id="preview-zone"></div>
+            </div>
+            <div class="ui-box">
+                <input type="text" id="label-input" placeholder="Enter label text...">
+                <button class="tool-btn" onclick="addLabel()" style="margin-top:8px; background:#27ae60; border:none;">Add Text Label</button>
+            </div>
+        </div>
+
+        <div id="tools" class="tab-content">
+            <button id="tool-measure" class="tool-btn" onclick="setTool('measure')">📏 Measurement Tool</button>
+            <button id="tool-scene-box" class="tool-btn" onclick="setTool('scene-box')">🖼️ Create Scene Area</button>
+            <button class="tool-btn" onclick="setTool(null)">🖐️ Pan / Select</button>
+        </div>
+
+        <div id="options" class="tab-content">
+            <div class="ui-box">
+                <strong>Visibility</strong>
+                <label class="checkbox-label"><input type="checkbox" id="fog-toggle" onchange="draw()"> Fog of War</label>
+                <label class="checkbox-label"><input type="checkbox" id="names-toggle" checked onchange="draw()"> Show Labels</label>
+                <label class="checkbox-label"><input type="checkbox" id="icons-toggle" checked onchange="draw()"> Show Icons</label>
+                <label class="checkbox-label"><input type="checkbox" id="scale-toggle" checked onchange="draw()"> Show Scale Bar</label>
+            </div>
+            <div class="ui-box">
+                <strong>Manage Library Categories</strong>
+                <div id="manage-categories-section">
+                    <small>To add a new category, use Upload tab to import assets under "Other", then promote category here.</small><br>
+                    <button onclick="addNewLibraryCategory()" class="tool-btn">Add New Category</button>
+                    <ul id="library-categories-list" style="list-style:none; padding-left:0; margin-top:10px;"></ul>
+                </div>
+            </div>
+        </div>
+
+        <div id="upload" class="tab-content">
+            <div class="ui-box">
+                <strong>Map Upload</strong>
+                <label>Import Map (SVG, PNG, JPG)</label>
+                <input type="file" id="map-upload" accept=".svg,image/*" onchange="handleMapUpload(event)">
+            </div>
+            <div class="ui-box">
+                <strong>Asset Importer</strong>
+                <label>Category</label>
+                <select id="upload-cat"></select>
+                <input type="file" id="asset-file" accept="image/*">
+                <button class="tool-btn" onclick="handleAssetUpload()" style="margin-top:10px; background:var(--acc); border:none;">Upload to Library</button>
+            </div>
+        </div>
+
+        <div id="settings" class="tab-content">
+            <div class="ui-box">
+                <label>Map Name</label>
+                <input type="text" id="setting-map-name" value="My New Campaign" oninput="draw()">
+                <div></div>
+                <label>Grid Color</label>
+                <input type="color" id="setting-scene-color" value="#000000" onchange="draw()">
+                <div></div>
+                <label>Grid Fractal Depth (1-5)</label>
+                <input type="range" id="setting-nest" min="1" max="5" value="2" oninput="draw()">
+                <div></div>
+                <label>Grid Opacity (%)</label>
+                <input type="range" id="setting-grid-opacity" min="0" max="100" value="40" oninput="draw()">
+                <div></div>
+                <label>Scale Modifier</label>
+                <div></div>
+                <select id="scale-modifier" onchange="draw()">
+                    <option value="1">1 ft</option>
+                    <option value="10">10 ft</option>
+                    <option value="100">100 ft</option>
+                    <option value="1000">1000 ft</option>
+                    <option value="5280">1 mile</option>
+                    <option value="52800">10 miles</option>
+                    <option value="528000">100 miles</option>
+                    <option value="5280000">1000 miles</option>
+                    <option value="52800000">10000 miles</option>
+                </select>
+                <div></div>
+                <label>Map Size</label>
+                <div></div>
+                <input type="range" id="map-scale" min="1" max="5" value="1" oninput="updateMapSize()">
+                <div></div>
+                <label class="checkbox-label">
+                <input type="checkbox" id="setting-snap" checked> Snap to Grid
+                </label>
+            </div>
+            <div class="ui-box">
+              <strong>Project Management</strong>
+              <button class="tool-btn" onclick="saveProject()" style="background:#2980b9; border:none;">💾 Save to File</button>
+              <button class="tool-btn" onclick="document.getElementById('load-input').click()" style="background:#8e44ad; border:none;">📂 Load from File</button>
+              <input type="file" id="load-input" style="display:none" accept=".json" onchange="loadProject(event)">
+              <p id="autosave-status" style="font-size: 10px; color: #888; margin-top: 5px;">Autosave: Idle</p>
+            </div>            
+        </div>
+    </nav>
+
+    <main id="viewport">
+        <canvas id="vtt-canvas"></canvas>
+        <div id="item-context">
+            <strong id="ctx-name">Item</strong>
+            <p id="ctx-info" style="font-size:11px; color:#ccc; margin: 10px 0;">No info available.</p>
+
+            <label for="item-scale-input">Size (0.1 to 50):</label>
+            <input type="number" id="item-scale-input" min="0.1" max="50" step="0.1" value="1">
+
+            <button class="tool-btn" style="background:#c0392b; border:none; margin:10px 0 0 0;" onclick="deleteSelectedItem()">Delete</button>
+            <button class="tool-btn" style="background:#444; border:none; margin-top:8px;" onclick="closeContext()">Close</button>
+        </div>
+    </main>
+</div>
+<script>
+    const canvas = document.getElementById('vtt-canvas');
+    const ctx = canvas.getContext('2d');
+    const viewport = document.getElementById('viewport');
+    const itemContext = document.getElementById('item-context');
+    const rulerHint = document.getElementById('ruler-hint');
+    const itemScaleInput = document.getElementById('item-scale-input');
+    // Scale bar increments
+    const SCALE_STEPS = [
+      1,          // 1 ft
+      10,         // 10 ft
+      100,        // 100 ft
+      1000,       // 1000 ft
+      5280,       // 1 mile
+      52800,      // 10 miles
+      528000,     // 100 miles
+      5280000,    // 1000 miles
+      52800000    // 10000 miles
+    ];
+
+    // Prevent clicks inside the context menu from bubbling up to the viewport
+    itemContext.onmousedown = (e) => {
+      e.stopPropagation();
+    };
+
+
+    // --- STATE MANAGEMENT ---
+    let zoom = 1.0, viewX = 0, viewY = 0;
+
+    let layers = [
+        {items: [], name: "Floor 1", position: {x:0,y:0}},
+        {items: [], name: "Floor 2", position: {x:0,y:0}}
+    ];
+    let activeLayer = 0;
+
+    let library = { player: [], wall: [], furniture: [], plant: [], roof: [], item: [], other: [] };
+    let currentCategory = 'player';
+
+    let activeTool = null, selectedItem = null, grabbedItem = null;
+    let isPanning = false, isMeasuring = false, isBoxing = false;
+    let measureStart = null, boxStart = null, dragOffset = {x:0, y:0};
+
+    let mapItem = null;
+
+    let drawPending = false;
+
+    // --- INITIALIZE ---
+    function init() {
+        resizeCanvas();
+        window.addEventListener('resize', resizeCanvas);
+        renderLayersUI();
+        updateUploadCategorySelect();
+        renderLibraryCategoryButtons();
+        setCategory('player');
+        setupItemContextHandlers();
+        draw();
+    }
+    function resizeCanvas() {
+        canvas.width = viewport.clientWidth;
+        canvas.height = viewport.clientHeight;
+        scheduleDraw();
+    }
+    function scheduleDraw() {
+        if(drawPending) return;
+        drawPending = true;
+        requestAnimationFrame(() => {
+            drawPending = false;
+            draw();
+        });
+    }
+
+    // --- LAYER UI --- full box clickable
+    function renderLayersUI(){
+        const container = document.getElementById('layers-container');
+        container.innerHTML = '';
+        layers.forEach((layer, idx) => {
+            const div = document.createElement('div');
+            div.className = 'layer-control' + (idx === activeLayer ? " active" : "");
+            div.onclick = e => {
+                if(e.target.tagName.toLowerCase() !== 'input' && !e.target.closest('.layer-buttons')) {
+                    selectLayer(idx);
+                }
+            };
+            div.innerHTML = `
+                <input type="text" style="flex: 1 1 auto; border-radius: 3px;" value="${layer.name}" onchange="renameLayer(${idx}, this.value)" />
+                <div class="layer-buttons">
+                    <button title="Move up" onclick="event.stopPropagation(); moveLayerUp(${idx})">&#x25B2;</button>
+                    <button title="Move down" onclick="event.stopPropagation(); moveLayerDown(${idx})">&#x25BC;</button>
+                </div>
+            `;
+            container.appendChild(div);
+        });
+    }
+    function addLayerPrompt() {
+        let name = ("Enter layer name:", `Layer ${layers.length+1}`);
+        if(name && name.trim() !== '') {
+            layers.push({items: [], name: name.trim(), position: {x:0,y:0}});
+            activeLayer = layers.length-1;
+            renderLayersUI();
+            scheduleDraw();
+        }
+    }
+    function removeSelectedLayer() {
+        if(layers.length <= 1) { alert("At least one layer must exist."); return; }
+        layers.splice(activeLayer,1);
+        activeLayer = Math.min(activeLayer, layers.length-1);
+        renderLayersUI();
+        scheduleDraw();
+    }
+    function selectLayer(idx) {
+        activeLayer = idx;
+        renderLayersUI();
+        scheduleDraw();
+    }
+    function renameLayer(idx, val) {
+        if(val.trim()==='') return;
+        layers[idx].name = val.trim();
+        renderLayersUI();
+    }
+    function setLayerPosition(idx, axis, val) {
+        val = parseFloat(val) || 0;
+        layers[idx].position[axis] = val;
+        scheduleDraw();
+    }
+    function moveLayerUp(idx) {
+        if(idx<=0) return;
+        [layers[idx-1], layers[idx]] = [layers[idx], layers[idx-1]];
+        if(activeLayer===idx) activeLayer=idx-1;
+        else if(activeLayer===idx-1) activeLayer=idx;
+        renderLayersUI();
+        scheduleDraw();
+    }
+    function moveLayerDown(idx) {
+        if(idx>=layers.length-1) return;
+        [layers[idx], layers[idx+1]] = [layers[idx+1], layers[idx]];
+        if(activeLayer===idx) activeLayer=idx+1;
+        else if(activeLayer===idx+1) activeLayer=idx;
+        renderLayersUI();
+        scheduleDraw();
+    }
+
+    // --- LIBRARY CATEGORIES MANAGEMENT ---
+    function updateUploadCategorySelect() {
+        const uploadSelect = document.getElementById('upload-cat');
+        const selected = uploadSelect.value;
+        uploadSelect.innerHTML = '';
+        Object.keys(library).forEach(cat => {
+            const opt = document.createElement('option');
+            opt.value = cat;
+            opt.textContent = cat.charAt(0).toUpperCase() + cat.slice(1);
+            uploadSelect.appendChild(opt);
+        });
+        uploadSelect.value = selected || 'player';
+    }
+    function renderLibraryCategoryButtons() {
+        const container = document.getElementById('category-buttons');
+        // Remove dynamic buttons
+        Array.from(container.children).forEach(child => {
+            if (!['cat-player','cat-wall','cat-furniture','cat-plant','cat-roof','cat-item','cat-other'].includes(child.id)) {
+                container.removeChild(child);
+            }
+        });
+        Object.keys(library).forEach(cat => {
+            if (!['player','wall','furniture','plant','roof','item','other'].includes(cat)) {
+                let btn = document.createElement('button');
+                btn.className = 'cat-btn';
+                btn.id = `cat-${cat}`;
+                btn.textContent = cat.charAt(0).toUpperCase() + cat.slice(1);
+                btn.onclick = () => setCategory(cat);
+                container.appendChild(btn);
+            }
+        });
+    }
+    function addNewLibraryCategory() {
+        let newCat = prompt("Enter new library category name (no spaces, no special chars):");
+        if (!newCat) return;
+        newCat = newCat.toLowerCase().replace(/[^a-z0-9_]/g, "");
+        if (library[newCat]) {
+            alert("Category already exists.");
+            return;
+        }
+        library[newCat] = [];
+        updateUploadCategorySelect();
+        renderLibraryCategoryButtons();
+        alert(`Category '${newCat}' added. Now upload assets to it from Upload tab.`);
+    }
+
+    // --- DRAWING ENGINE ---
+
+    function draw() {
+        ctx.clearRect(0,0,canvas.width,canvas.height);
+        ctx.save();
+        ctx.scale(zoom, zoom);
+        ctx.translate(-viewX, -viewY);
+
+        // Draw layers in order with offset
+        for(let i=0; i<layers.length; i++){
+            const layer = layers[i];
+            ctx.save();
+            ctx.translate(layer.position.x, layer.position.y);
+
+            if(i===0 && mapItem){
+                ctx.drawImage(mapItem.img, mapItem.x, mapItem.y, mapItem.w, mapItem.h);
+            }
+
+            if(document.getElementById('icons-toggle').checked){
+                layer.items.forEach(item=>{
+                    if(item.type==='asset'){
+                        ctx.drawImage(item.img, item.x, item.y, item.w*item.scale, item.h*item.scale);
+                    } else if(item.type==='text' && document.getElementById('names-toggle').checked){
+                        ctx.fillStyle = "white";
+                        ctx.font = `bold ${16/zoom}px sans-serif`;
+                        ctx.textAlign = "center";
+                        ctx.fillText(item.text, item.x, item.y);
+                    } else if(item.type==='scene'){
+                        ctx.strokeStyle = document.getElementById('setting-scene-color').value;
+                        ctx.lineWidth = 2/zoom;
+                        ctx.strokeRect(item.x, item.y, item.w, item.h);
+                        ctx.fillStyle = document.getElementById('setting-scene-color').value;
+                        ctx.font = `${12/zoom}px sans-serif`;
+                        ctx.fillText("SCENE AREA", item.x, item.y-5);
+                    }
+                });
+            }
+            ctx.restore();
+        }
+
+        renderFractalGrid();
+
+        if(document.getElementById('fog-toggle').checked){
+            ctx.fillStyle = "rgba(0,0,0,0.7)";
+            ctx.fillRect(viewX, viewY, canvas.width/zoom, canvas.height/zoom);
+        }
+
+        if(isMeasuring && measureStart){
+            ctx.strokeStyle = "#e74c3c";
+            ctx.lineWidth = 3/zoom;
+            ctx.lineJoin = 'round';
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(measureStart.x, measureStart.y);
+            const dx = measureStart.cx - measureStart.x;
+            const dy = measureStart.cy - measureStart.y;
+            // We'll draw a smooth quadratic curve for a rounded line
+            let midX = measureStart.x + dx/2;
+            let midY = measureStart.y + dy/2 - 10/zoom; // slight offset for curve
+            ctx.quadraticCurveTo(midX, midY, measureStart.cx, measureStart.cy);
+            ctx.stroke();
+        }
+
+        if(isBoxing && boxStart){
+            ctx.strokeStyle = "white";
+            ctx.lineWidth = 1/zoom;
+            ctx.setLineDash([5/zoom, 5/zoom]);
+            ctx.strokeRect(boxStart.x, boxStart.y, boxStart.cx-boxStart.x, boxStart.cy-boxStart.y);
+            ctx.setLineDash([]);
+        }
+
+        ctx.restore();
+
+        if(document.getElementById('scale-toggle').checked) renderScaleBar();
+    }
+
+    // Optimized fractal grid: draw only visible layers based on zoom
+    function renderFractalGrid(){
+        const maxDepth = parseInt(document.getElementById('setting-nest').value);
+        const baseOpacity = parseInt(document.getElementById('setting-grid-opacity').value)/100;
+        const canvasWidthWorld = canvas.width/zoom;
+        const canvasHeightWorld = canvas.height/zoom;
+
+        // Draw fractal layers progressively smaller but stop when grid size is < min threshold
+        function recursiveDraw(size, depth, opacity){
+            if(depth >= maxDepth) return;
+            if(size < 0.05) return; // don't draw tiny grids, adjust for zoom scale
+
+            ctx.strokeStyle = "#444";
+            ctx.globalAlpha = opacity * baseOpacity;
+            ctx.lineWidth = 1/zoom;
+            ctx.beginPath();
+
+            let startX = Math.floor(viewX/size)*size;
+            let startY = Math.floor(viewY/size)*size;
+            let endX = viewX + canvasWidthWorld + size;
+            let endY = viewY + canvasHeightWorld + size;
+
+            // Draw vertical lines
+            for(let x = startX; x <= endX; x+=size){
+                ctx.moveTo(x, viewY);
+                ctx.lineTo(x, viewY + canvasHeightWorld);
+            }
+
+            // Draw horizontal lines
+            for(let y = startY; y <= endY; y+=size){
+                ctx.moveTo(viewX, y);
+                ctx.lineTo(viewX + canvasWidthWorld, y);
+            }
+            ctx.stroke();
+
+            // Draw smaller grids if zoom permits (when grid size * zoom > 8 px to be visible)
+            if(size*zoom > 8){
+                recursiveDraw(size/10, depth+1, opacity*0.7);
+            }
+        }
+        recursiveDraw(100, 0, 1);
+        ctx.globalAlpha = 1;
+    }
+
+    // --- SCALE BAR ---
+    function getScaleModifier(){
+        return parseFloat(document.getElementById('scale-modifier').value);
+    }
+    function formatDistance(feet) {
+        if (feet < 5280) {
+            return `${Math.round(feet)} ft`;
+        }
+        let miles = feet / 5280;
+        // If it's a whole number, don't show decimals
+        return `${miles >= 10 ? Math.round(miles) : miles.toFixed(1)} mi`;
+    }
+    function renderScaleBar() {
+        const targetWidthPx = 150; // The ideal width of the bar on screen
+    
+        // 1. Calculate how many feet are currently in 'targetWidthPx' screen pixels
+        // At zoom 1.0, 100px = 1 'unit' (from your grid logic). 
+        // So: feetInTarget = (pixels / zoom) / 100 * scaleModifier
+        const scaleMod = getScaleModifier();
+        const feetInTarget = (targetWidthPx / zoom) / 100 * scaleMod;
+
+        // 2. Find the best fit from SCALE_STEPS
+        // We look for the step that is closest to (but usually smaller than) feetInTarget
+        let bestStep = SCALE_STEPS[0];
+        for (let i = 0; i < SCALE_STEPS.length; i++) {
+            if (feetInTarget >= SCALE_STEPS[i]) {
+                bestStep = SCALE_STEPS[i];
+            } else {
+                break;
+            }
+        }
+
+        // 3. Calculate the actual pixel width for that 'bestStep'
+        // Width = (feet / scaleMod) * 100 * zoom
+        const finalBarWidth = (bestStep / scaleMod) * 100 * zoom;
+
+        // 4. Draw the UI
+        const x = 20;
+        const y = canvas.height - 30;
+
+        // Draw Bar
+        ctx.fillStyle = "white";
+        ctx.fillRect(x, y, finalBarWidth, 4);
+    
+        // Draw End Caps
+        ctx.fillRect(x, y - 5, 2, 10);
+        ctx.fillRect(x + finalBarWidth - 2, y - 5, 2, 10);
+
+        // Draw Text
+        ctx.font = "bold 12px sans-serif";
+        ctx.shadowColor = "black";
+        ctx.shadowBlur = 4;
+        ctx.textAlign = "left";
+        ctx.fillText(formatDistance(bestStep), x, y - 12);
+        ctx.shadowBlur = 0;
+    }
+
+    // --- TOOL & INPUTS ---
+    viewport.onmousedown = (e) => {
+        e.preventDefault();
+        const rect = canvas.getBoundingClientRect();
+        const mx = (e.clientX - rect.left) / zoom + viewX;
+        const my = (e.clientY - rect.top) / zoom + viewY;
+
+        if (activeTool === 'measure') {
+            isMeasuring = true;
+            measureStart = { x: mx, y: my, cx: mx, cy: my };
+        } else if (activeTool === 'scene-box') {
+            isBoxing = true;
+            boxStart = { x: mx, y: my, cx: mx, cy: my };
+        } else {
+            // Find item under mouse
+            const item = layers[activeLayer].items.findLast(it => {
+                let width = (it.w || 20) * (it.scale || 1);
+                let height = (it.h || 20) * (it.scale || 1);
+                return mx > it.x && mx < it.x + width && my > it.y && my < it.y + height;
+            });
+
+            if (item && item.type !== 'map') {
+                selectedItem = item;
+                grabbedItem = item; // Allow moving now!
+            
+                // Calculate offset so the item doesn't "jump" its top-left corner to your mouse
+                dragOffset.x = mx - item.x;
+                dragOffset.y = my - item.y;
+
+                const scrX = (item.x + layers[activeLayer].position.x - viewX) * zoom;
+                const scrY = (item.y + layers[activeLayer].position.y - viewY) * zoom;
+                openContext(scrX + 10, scrY + ((item.h || 20) * (item.scale || 1) * zoom) + 5, item);
+                itemScaleInput.value = item.scale ? item.scale.toFixed(2) : 1;
+            } else {
+                closeContext();
+                isPanning = true;
+            }
+        }
+        scheduleDraw();
+    };
+
+    window.onmousemove = (e) => {
+        const rect = canvas.getBoundingClientRect();
+        const mx = (e.clientX - rect.left) / zoom + viewX;
+        const my = (e.clientY - rect.top) / zoom + viewY;
+
+        if (isPanning) {
+            viewX -= e.movementX / zoom;
+            viewY -= e.movementY / zoom;
+            scheduleDraw();
+        } 
+        else if (grabbedItem) {
+            // ... inside window.onmousemove, under if(grabbedItem) ...
+
+            let newX = mx - dragOffset.x;
+            let newY = my - dragOffset.y;
+
+            if (document.getElementById('setting-snap').checked) {
+                // Get the dynamic snap size based on current zoom
+                const snapSize = getCurrentSnapSize();
+    
+                newX = Math.round(newX / snapSize) * snapSize;
+                newY = Math.round(newY / snapSize) * snapSize;
+            }
+
+            grabbedItem.x = newX;
+            grabbedItem.y = newY;
+
+            // ... rest of movement logic ...
+        
+            // Reposition context menu while dragging
+            const scrX = (grabbedItem.x + layers[activeLayer].position.x - viewX) * zoom;
+            const scrY = (grabbedItem.y + layers[activeLayer].position.y - viewY) * zoom;
+            itemContext.style.left = (scrX + 10) + 'px';
+            itemContext.style.top = (scrY + ((grabbedItem.h || 20) * (grabbedItem.scale || 1) * zoom) + 5) + 'px';
+        
+            scheduleDraw();
+        }
+        else if (isMeasuring) {
+            measureStart.cx = mx;
+            measureStart.cy = my;
+            scheduleDraw();
+            // ... (rest of your existing measurement code)
+        }
+        else if (isBoxing) {
+            boxStart.cx = mx;
+            boxStart.cy = my;
+            scheduleDraw();
+        }
+    };
+
+    window.onmouseup = () => {
+        if(isBoxing){
+            layers[activeLayer].items.push({
+                type: 'scene',
+                x: Math.min(boxStart.x, boxStart.cx),
+                y: Math.min(boxStart.y, boxStart.cy),
+                w: Math.abs(boxStart.cx - boxStart.x),
+                h: Math.abs(boxStart.cy - boxStart.y)
+            });
+            setTool(null);
+        }
+        isPanning = false;
+        isMeasuring = false;
+        isBoxing = false;
+        grabbedItem = null;
+        rulerHint.style.display = 'none';
+        scheduleDraw();
+    };
+
+    // --- ASSET & MAP UPLOAD ---
+    function handleMapUpload(e){
+        const file = e.target.files[0];
+        if(!file) return;
+        const reader = new FileReader();
+        reader.onload = ev=>{
+            const img = new Image();
+            img.onload = ()=>{
+                const scaleVal = parseInt(document.getElementById('map-scale').value);
+                const scaleFactor = scaleVal;
+                mapItem = { type:'map', img: img, x: 0, y: 0, w: img.width*scaleFactor, h: img.height*scaleFactor };
+                layers[0].items = layers[0].items.filter(i=>i.type!=='map');
+                layers[0].items.unshift(mapItem);
+                scheduleDraw();
+            };
+            img.src = ev.target.result;
+        };
+        reader.readAsDataURL(file);
+    }
+    function updateMapSize(){
+        if(!mapItem) return;
+        const scaleVal = parseInt(document.getElementById('map-scale').value);
+        const scaleFactor = scaleVal;
+        mapItem.w = mapItem.img.width*scaleFactor;
+        mapItem.h = mapItem.img.height*scaleFactor;
+        scheduleDraw();
+    }
+    function handleAssetUpload(){
+        const file = document.getElementById('asset-file').files[0];
+        const cat = document.getElementById('upload-cat').value;
+        if(!file) return;
+        const reader = new FileReader();
+        reader.onload=e=>{
+            library[cat].push(e.target.result);
+            setCategory(cat);
+        };
+        reader.readAsDataURL(file);
+    }
+    function setCategory(cat){
+        currentCategory = cat;
+        document.querySelectorAll('.cat-btn').forEach(b=>b.classList.remove('active'));
+        const btn = document.getElementById(`cat-${cat}`);
+        if(btn) btn.classList.add('active');
+        const zone = document.getElementById('preview-zone');
+        zone.innerHTML = library[cat]?.map(src=>`<img src="${src}" onclick="spawnAsset('${src}')">`).join('')||'';
+    }
+    function spawnAsset(src){
+        const img = new Image();
+        img.onload = () => {
+            const aspectRatio=img.width/img.height;
+            let width=100,height=100;
+            if(aspectRatio>=1) height = width/aspectRatio;
+            else width = height*aspectRatio;
+            layers[activeLayer].items.push({
+                type: 'asset', img: img,
+                x: viewX+50, y: viewY+50,
+                w: width, h: height,
+                scale:1
+            });
+            scheduleDraw();
+        };
+        img.src = src;
+    }
+    function addLabel(){
+        const val = document.getElementById('label-input').value.trim();
+        if(!val) return;
+        layers[activeLayer].items.push({ type:'text', text: val, x: viewX+100, y: viewY+100, w: 0, h: 0, scale:1 });
+        scheduleDraw();
+    }
+    function getCurrentSnapSize() {
+        let size = 100; // Base grid size
+        const maxDepth = parseInt(document.getElementById('setting-nest').value);
+
+        // Loop through depths to find the smallest size where (size * zoom) > 8px
+        // This matches the "visibility" threshold in your renderFractalGrid function
+        for (let depth = 0; depth < maxDepth; depth++) {
+            if ((size / 10) * zoom > 8) {
+                size = size / 10;
+            } else {
+                break;
+            }
+        }
+        return size;
+    }
+
+    // --- CONTEXT MENU (item-scale-input handler) ---
+    function setupItemContextHandlers(){
+        itemScaleInput.onchange = ()=>{
+            if(!selectedItem) return;
+            let val = parseFloat(itemScaleInput.value);
+            if(isNaN(val)) val=1;
+            val = Math.min(Math.max(val, 0.01), 1000);
+            itemScaleInput.value=val.toFixed(2);
+
+            if(selectedItem.type==='asset'){
+                selectedItem.scale=val;
+            } else if(selectedItem.type==='text'){
+                selectedItem.scale=val;
+            }
+            scheduleDraw();
+        };
+    }
+
+    // --- UTILITIES ---
+    function setTool(t){
+        activeTool = t;
+        document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+        if(t) document.getElementById(`tool-${t}`)?.classList.add('active');
+        if(t!=='measure'){
+            rulerHint.style.display='none';
+        }
+    }
+    function showTab(id){
+        document.querySelectorAll('.tab-content, .tab-btn').forEach(el=>el.classList.remove('active'));
+        document.getElementById(id).classList.add('active');
+        document.getElementById(`btn-tab-${id}`).classList.add('active');
+        if(id==='upload') updateUploadCategorySelect();
+    }
+    function openContext(x,y,item){
+        itemContext.style.display = 'block';
+        itemContext.style.left = x + 'px';
+        itemContext.style.top = y + 'px';
+        document.getElementById('ctx-name').innerText = item.type.toUpperCase();
+    }
+    function closeContext(){
+        itemContext.style.display = 'none';
+        selectedItem = null;
+    }
+    function deleteSelectedItem(){
+        if(selectedItem){
+            layers[activeLayer].items = layers[activeLayer].items.filter(i=>i!==selectedItem);
+            selectedItem = null;
+            closeContext();
+            scheduleDraw();
+        }
+    }
+
+    // --- SAVE ---
+    function saveProject() {
+        try {
+            console.log("Starting save process...");
+
+            // 1. Check if we have layers to save
+            if (!layers || layers.length === 0) {
+                alert("No layers found to save!");
+                return;
+            }
+
+            // 2. Serialize Layers (convert Image objects to Source strings)
+            const serializedLayers = layers.map(layer => ({
+                name: layer.name,
+                position: layer.position,
+                items: layer.items.map(item => {
+                    const newItem = { ...item };
+                    // We cannot stringify the HTMLImageElement, so we save the .src string instead
+                    if (item.img && item.img.src) {
+                        newItem.img = item.img.src; 
+                    }
+                    return newItem;
+                })
+            }));
+
+          // 3. Create the Data Package
+            const savePackage = {
+                layers: serializedLayers,
+                library: library,
+                zoom: zoom,
+                viewX: viewX,
+                viewY: viewY,
+                mapName: document.getElementById('setting-map-name').value
+            };
+
+            // 4. Convert to String
+            const dataString = JSON.stringify(savePackage);
+
+            // 5. Create Download Trigger
+            const blob = new Blob([dataString], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+        
+            const link = document.createElement('a');
+            link.href = url;
+            link.download = `${savePackage.mapName || 'my_map'}.json`;
+        
+            // Append to body, click, and remove (Required for some browsers)
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+        
+            // Clean up the URL object memory
+            setTimeout(() => URL.revokeObjectURL(url), 100);
+        
+            console.log("Save successful!");
+
+        } catch (error) {
+            console.error("Save Error:", error);
+            alert("Failed to save project. Error: " + error.message);
+        }
+    }
+    // --- LOAD PROJECT --- 
+    function loadProject(event) {
+        const file = event.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+        reader.onload = async (e) => {
+            const data = JSON.parse(e.target.result);
+
+            // Restore Library first
+            library = data.library || library;
+            renderLibraryCategoryButtons();
+            setCategory('player');
+
+            // Restore View
+            zoom = data.zoom || 1;
+            viewX = data.viewX || 0;
+            viewY = data.viewY || 0;
+
+            // Restore Layers and reconstruct Images
+            layers = await Promise.all(data.layers.map(async layer => ({
+                ...layer,
+                items: await Promise.all(layer.items.map(async item => {
+                    if (item.type === 'asset' || item.type === 'map') {
+                        const img = new Image();
+                        img.src = item.img;
+                        await img.decode(); // Wait for image to load
+                        return { ...item, img };
+                    }
+                    return item;
+                }))
+            })));
+
+            // Handle MapItem reference
+            if (data.mapItem) {
+                const mImg = new Image();
+                mImg.src = data.mapItem.img;
+                await mImg.decode();
+                mapItem = { ...data.mapItem, img: mImg };
+            }
+
+            renderLayersUI();
+            scheduleDraw();
+            alert("Project Loaded Successfully!");
+        };
+        reader.readAsText(file);
+    }
+    // --- AUTO SAVE ---
+    function autoSaveToBrowser() {
+        try {
+            const serializedLayers = layers.map(layer => ({
+                ...layer,
+                items: layer.items.map(item => {
+                    if (item.type === 'asset' || item.type === 'map') {
+                        return { ...item, img: item.img.src };
+                    }
+                    return item;
+                })
+            }));
+
+            const savePackage = {
+                layers: serializedLayers,
+                library,
+                mapItem: mapItem ? { ...mapItem, img: mapItem.img.src } : null,
+                timestamp: new Date().toLocaleTimeString()
+            };
+
+            localStorage.setItem('freettt_autosave', JSON.stringify(savePackage));
+            document.getElementById('autosave-status').innerText = `Autosave: Last saved at ${savePackage.timestamp}`;
+        } catch (e) {
+            console.warn("Autosave failed: Likely exceeded browser storage limit (5MB).", e);
+            document.getElementById('autosave-status').innerText = "Autosave: Failed (Map too large for browser)";
+        }
+    }
+
+    // Start the timer: 60,000ms = 1 minute
+    setInterval(autoSaveToBrowser, 60000);
+
+    // Optional: Load autosave on startup (Add this to your init() function)
+    function loadAutosave() {
+        const saved = localStorage.getItem('freettt_autosave');
+        if (saved && confirm("Found a previous session. Would you like to load your autosave?")) {
+            // You would use logic similar to loadProject here
+            // For brevity, you can wrap the load logic into a reusable function
+        }
+    }
+
+    // --- EVENT HANDLERS ---
+    viewport.onwheel = (e)=>{
+        e.preventDefault();
+        const rect = canvas.getBoundingClientRect();
+        const mouseX = e.clientX - rect.left;
+        const mouseY = e.clientY - rect.top;
+
+        const wx = mouseX / zoom + viewX;
+        const wy = mouseY / zoom + viewY;
+
+        const zoomAmount = Math.exp(-e.deltaY * 0.0015);
+        let newZoom = zoom * zoomAmount;
+
+        newZoom = Math.min(Math.max(newZoom, 0.1), 5000);
+
+        viewX = wx - mouseX / newZoom;
+        viewY = wy - mouseY / newZoom;
+        zoom = newZoom;
+
+        scheduleDraw();
+    };
+
+    init();
+</script>
+</body>
+</html>
